@@ -8,26 +8,34 @@
 const axios = require("axios");
 const slugify = require("slugify");
 
+function Exception(e) {
+  return { e, data: e.data && e.data.errors && e.data.errors };
+}
+
 function timeout(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const getGameInfo = async (slug) => {
-  const jsdom = require("jsdom");
-  const { JSDOM } = jsdom;
+  try {
+    const jsdom = require("jsdom");
+    const { JSDOM } = jsdom;
 
-  const formatedSlug = slug.replace(/-/g, "_");
+    const formatedSlug = slug.replace(/-/g, "_");
 
-  const body = await axios.get(`https://www.gog.com/en/game/${formatedSlug}`);
+    const body = await axios.get(`https://www.gog.com/en/game/${formatedSlug}`);
 
-  const dom = new JSDOM(body.data);
-  const description = dom.window.document.querySelector(".description");
+    const dom = new JSDOM(body.data);
+    const description = dom.window.document.querySelector(".description");
 
-  return {
-    rating: "BR0",
-    short_description: description?.textContent.slice(0, 160),
-    description: description.innerHTML,
-  };
+    return {
+      rating: "BR0",
+      short_description: description?.textContent.slice(0, 160),
+      description: description.innerHTML,
+    };
+  } catch (e) {
+    console.log("!! getGameInfo", Exception(e));
+  }
 };
 
 const getByName = async (name, entityName) => {
@@ -82,33 +90,37 @@ const createManyToManyData = async (products) => {
 };
 
 const setImage = async ({ image, game, field = "cover" }) => {
-  let url = image;
+  try {
+    let url = image;
 
-  if (field !== "cover") {
-    url = image.replace("_{formatter}", "_bg_crop_1680x655");
+    if (field !== "cover") {
+      url = image.replace("_{formatter}", "_bg_crop_1680x655");
+    }
+
+    const { data } = await axios.get(url, { responseType: "arraybuffer" });
+    const buffer = Buffer.from(data, "base64");
+
+    const FormData = require("form-data");
+    const formData = new FormData();
+
+    formData.append("refId", game.id);
+    formData.append("ref", "game");
+    formData.append("field", field);
+    formData.append("files", buffer, { filename: `${game.slug}.jpg` });
+
+    console.info(`Uploading ${field} image: ${game.slug}.jpg`);
+
+    await axios({
+      method: "POST",
+      url: `http://${strapi.config.host}:${strapi.config.port}/upload`,
+      data: formData,
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${formData._boundary}`,
+      },
+    });
+  } catch (e) {
+    console.log("!! setImage", Exception(e));
   }
-
-  const { data } = await axios.get(url, { responseType: "arraybuffer" });
-  const buffer = Buffer.from(data, "base64");
-
-  const FormData = require("form-data");
-  const formData = new FormData();
-
-  formData.append("refId", game.id);
-  formData.append("ref", "game");
-  formData.append("field", field);
-  formData.append("files", buffer, { filename: `${game.slug}.jpg` });
-
-  console.info(`Uploading ${field} image: ${game.slug}.jpg`);
-
-  await axios({
-    method: "POST",
-    url: `http://${strapi.config.host}:${strapi.config.port}/upload`,
-    data: formData,
-    headers: {
-      "Content-Type": `multipart/form-data; boundary=${formData._boundary}`,
-    },
-  });
 };
 
 const createGames = async (products) => {
@@ -120,7 +132,6 @@ const createGames = async (products) => {
         console.info(`Creating: * ${product.title} *`);
 
         const price = product.price.final;
-        // try {
         const game = await strapi.services.game.create({
           name: product.title,
           slug: product.slug.replace(/_/g, "-"),
@@ -159,9 +170,6 @@ const createGames = async (products) => {
         await timeout(2000);
 
         return game;
-        // } catch (err) {
-        //   return `erro: ${err}`;
-        // }
       }
     })
   );
@@ -169,18 +177,22 @@ const createGames = async (products) => {
 
 module.exports = {
   populate: async (params) => {
-    const gogApiUrl =
-      "https://catalog.gog.com/v1/catalog?limit=48&order=desc%3Abestselling&productType=in%3Agame%2Cpack%2Cdlc%2Cextras&page=1&countryCode=BR&locale=en-US&currencyCode=BRL";
+    try {
+      const gogApiUrl =
+        "https://catalog.gog.com/v1/catalog?limit=48&order=desc%3Abestselling&productType=in%3Agame%2Cpack%2Cdlc%2Cextras&page=1&countryCode=BR&locale=en-US&currencyCode=BRL";
 
-    const {
-      data: { products },
-    } = await axios.get(gogApiUrl);
+      const {
+        data: { products },
+      } = await axios.get(gogApiUrl);
 
-    // console.log("products", products[0]);
-    // console.log("getGameInfo", await getGameInfo(products[1].slug));
+      console.log("Starting...");
 
-    console.log("Starting...");
-    await createManyToManyData([products[4]]);
-    await createGames([products[4]]);
+      await createManyToManyData([products[4]]);
+      await createGames([products[4]]);
+
+      console.log("Creation finished...");
+    } catch (e) {
+      console.log("!! populate", Exception(e));
+    }
   },
 };
