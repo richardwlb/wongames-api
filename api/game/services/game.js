@@ -167,7 +167,7 @@ const createGames = async (products) => {
             .map((url) => setImage({ image: url, game, field: "gallery" }))
         );
 
-        await timeout(2000);
+        await timeout(3000);
 
         return game;
       }
@@ -185,12 +185,8 @@ module.exports = {
         data: { products },
       } = await axios.get(gogApiUrl);
 
-      console.log("Starting...");
-
-      await createManyToManyData([products[4]]);
-      await createGames([products[4]]);
-
-      console.log("Creation finished...");
+      await createManyToManyData(products);
+      await createGames(products);
     } catch (e) {
       console.log("!! populate", Exception(e));
     }
